@@ -1,0 +1,492 @@
+#include "ez-draw.h"
+#define SIZE 8
+
+typedef struct dot dot;
+typedef struct dotp dotp;
+struct dot
+{
+	int x,y,id;
+	dotp *adj;
+	dot *next;
+	int selected;
+};
+
+
+struct dotp
+{
+    int wght;
+    dot *dot1;
+	dot *dot2;
+	dotp *next;
+};
+
+
+dot *first;
+dot *target1, *target2;
+int mode,show_wght;
+int mx,my,mx2,my2,w,h;
+int dots_created;
+int selectx,selecty;
+
+
+int clicked (dot *current)
+{
+	if(mx<current->x+SIZE && mx>current->x-SIZE && my<current->y+SIZE && my>current->y-SIZE) return 1;
+	else return 0;
+}
+
+
+void win1_on_expose (Ez_event *ev)              /* We must redraw everything */
+{
+	dot *current = first;
+	int midx,midy;
+	ez_draw_text(ev->win,EZ_TL,10,10,"C: Activer/desactiver l'affichage des poids     A: Ajouter un sommet     Suppr: Supprimer le sommet selectionne\nSelectionnez/deplacez les sommets avec le clic gauche, liez-les avec le clic droit.");
+	if(mode==2)
+	{
+        ez_set_color(ez_grey);
+		ez_draw_line(ev->win,target1->x,target1->y,mx,my);
+	}
+	else if(mode==3)
+	{
+        ez_set_color(ez_black);
+        ez_draw_rectangle(ev->win,selectx,selecty,mx,my);
+	}
+    while(current != NULL)
+    {
+		dotp *linked=current->adj;
+		ez_set_color(ez_black);
+		while(linked!=NULL)
+		{
+			if(linked->dot2->id>current->id)
+			{
+                ez_draw_line(ev->win,current->x,current->y,linked->dot2->x,linked->dot2->y);
+                if(show_wght==1)
+                {
+                    midx = current->x-(current->x-linked->dot2->x)/2;
+                    midy = current->y-(current->y-linked->dot2->y)/2;
+                    ez_draw_text(ev->win,EZ_BL,midx,midy,"%d",linked->wght);
+                }
+            }
+			linked=linked->next;
+		}
+		if(current->selected==1) ez_set_color(ez_red);
+		else ez_set_color(ez_blue);
+		ez_fill_rectangle(ev->win,current->x+SIZE,current->y+SIZE,current->x-SIZE,current->y-SIZE);
+		current=current->next;
+	}
+}
+
+
+void win1_on_button_press (Ez_event *ev)             /* Mouse button pressed */
+{
+    if(ev->mb==1)
+    {
+		dot *current = first;
+		while(current!=NULL)
+		{
+			if(clicked(current))
+			{
+				mode=1;
+				if(current->selected==0)
+				{
+                    target1=current;
+                    current=first;
+                    while(current!=NULL)
+                    {
+                        current->selected=0;
+                        current=current->next;
+                    }
+                    target1->selected=1;
+                }
+				break;
+			}
+			current = current->next;
+		}
+		if(mode!=1)
+		{
+            current=first;
+            while(current!=NULL)
+            {
+                current->selected=0;
+                current=current->next;
+            }
+            selectx=mx;
+            selecty=my;
+            mode=3;
+		}
+	}
+	else if(ev->mb==3)
+	{
+		dot *current = first;
+		while(current!=NULL)
+		{
+			if(clicked(current))
+			{
+				mode=2;
+				target1=current;
+				break;
+			}
+			current = current->next;
+		}
+	}
+}
+
+void unlink(dotp *linked, dot *dot1, dot *dot2)
+{
+	dotp *temp;
+	if(linked->dot2==dot2)
+	{
+        if(linked->next!=NULL)
+        {
+            dot1->adj=linked->next;
+            free(linked);
+        }
+        else
+        {
+            dot1->adj=NULL;
+            free(linked);
+        }
+	}
+	else
+	{
+        if(linked->next->next!=NULL)
+        {
+            temp=linked->next->next;
+            free(linked->next);
+            linked->next=temp;
+        }
+        else
+        {
+            free(linked->next);
+            linked->next=NULL;
+        }
+    }
+    linked=dot2->adj;
+	if(linked->dot2==dot1)
+	{
+		if(linked->next!=NULL)
+        {
+            dot2->adj=linked->next;
+            free(linked);
+        }
+        else
+        {
+            free(linked);
+            dot2->adj=NULL;
+        }
+		mode=0;
+		return;
+	}
+	while(linked->next!=NULL)
+	{
+		if(linked->next->dot2==dot1)
+		{
+			if(linked->next->next!=NULL)
+            {
+                temp=linked->next->next;
+                free(linked->next);
+                linked->next=temp;
+            }
+            else
+            {
+                free(linked->next);
+                linked->next=NULL;
+            }
+            break;
+		}
+		linked=linked->next;
+	}
+	mode=0;
+	return;
+}
+
+void link(int dotid1, int dotid2, int poids)
+{
+    dot *current=first;
+    target1=NULL;
+    target2=NULL;
+    while(current!=NULL && (target1==NULL || target2==NULL))
+    {
+        if(current->id==dotid1) target1=current;
+        else if(current->id==dotid2) target2=current;
+        current=current->next;
+    }
+    dotp *linked=target1->adj;
+    if(linked!=NULL)
+    {
+        if(linked->dot2==target2) //Si le lien existe déjà
+        {
+            unlink(linked, target1, target2);
+            return;
+        }
+        while(linked->next!=NULL)
+        {
+            if(linked->next->dot2==target2) //Si le lien existe déjà
+            {
+                unlink(linked, target1, target2);
+                return;
+            }
+            linked=linked->next;
+        }
+        linked->next=malloc(sizeof(dotp));
+        linked=linked->next;
+        linked->dot1=target1;
+        linked->dot2=target2;
+        linked->next=NULL;
+        linked->wght=poids;
+        linked=linked->dot2->adj;
+
+        if(linked!=NULL)
+        {
+            while(linked->next!=NULL)
+            {
+                linked=linked->next;
+            }
+            linked->next=malloc(sizeof(dotp));
+            linked=linked->next;
+            linked->dot1=target2;
+            linked->dot2=target1;
+            linked->next=NULL;
+            linked->wght=poids;
+        }
+        else
+        {
+            target2->adj=malloc(sizeof(dotp));
+            linked=target2->adj;
+            linked->dot1=target2;
+            linked->dot2=target1;
+            linked->next=NULL;
+            linked->wght=poids;
+        }
+    }
+    else
+    {
+        target1->adj=malloc(sizeof(dotp));
+        linked=target1->adj;
+        linked->dot1=target1;
+        linked->dot2=target2;
+        linked->next=NULL;
+        linked->wght=poids;
+        linked=linked->dot2->adj;
+        if(linked!=NULL)
+        {
+            while(linked->next!=NULL)
+            {
+                linked=linked->next;
+            }
+            linked->next=malloc(sizeof(dotp));
+            linked=linked->next;
+            linked->dot1=target2;
+            linked->dot2=target1;
+            linked->next=NULL;
+            linked->wght=poids;
+        }
+        else
+        {
+            target2->adj=malloc(sizeof(dotp));
+            linked=target2->adj;
+            linked->dot1=target2;
+            linked->dot2=target1;
+            linked->next=NULL;
+            linked->wght=poids;
+        }
+    }
+}
+
+int inside_selection(dot *current)
+{
+    if(mx>selectx)
+    {
+        if(my>selecty)
+        {
+            if(current->x>selectx && current->x<mx && current->y>selecty && current->y<my) return 1;
+            else return 0;
+        }
+        else
+        {
+            if(current->x>selectx && current->x<mx && current->y<selecty && current->y>my) return 1;
+            else return 0;
+        }
+    }
+    else
+    {
+        if(my>selecty)
+        {
+            if(current->x<selectx && current->x>mx && current->y>selecty && current->y<my) return 1;
+            else return 0;
+        }
+        else
+        {
+            if(current->x<selectx && current->x>mx && current->y<selecty && current->y>my) return 1;
+            else return 0;
+        }
+    }
+}
+
+void win1_on_button_release (Ez_event *ev)          /* Mouse button released */
+{
+	if(ev->mb==1)
+	{
+        dot *current=first;
+        if(mode==3)
+        {
+            while(current!=NULL)
+            {
+                if(inside_selection(current)) current->selected=1;
+                current=current->next;
+            }
+        }
+		mode=0;
+	}
+	else if(ev->mb==3)
+	{
+		dot *current = first;
+		while(current!=NULL)
+		{
+			if(clicked(current)) //Si le lien a été relaché sur un autre point
+			{
+				link(target1->id,current->id,0);
+                ez_send_expose(ev->win);
+				break;
+			}
+			current = current->next;
+		}
+		mode=0;
+	}
+    ez_send_expose(ev->win);
+}
+
+
+void win1_on_motion_notify (Ez_event *ev)                     /* Mouse moved */
+{
+    mx2=mx;
+    my2=my;
+	mx=ev->mx;
+	my=ev->my;
+	if(mode!=0) ez_send_expose(ev->win);
+	if(mode==1)
+	{
+        dot *current=first;
+		while(current!=NULL)
+		{
+            if(current->selected==1)
+            {
+                current->x+=mx-mx2;
+                current->y+=my-my2;
+            }
+            current=current->next;
+		}
+	}
+}
+
+int create_dot()
+//Retourne l'id du sommet créé
+{
+    dot *current=first;
+    while(current->next!=NULL)
+    {
+        current = current->next;
+    }
+    current->next=malloc(sizeof(dot));
+    dots_created++;
+    current=current->next;
+    current->x=ez_random(w);
+    current->y=ez_random(h);
+    current->adj=NULL;
+    current->next=NULL;
+    current->id=dots_created;
+    current->selected=0;
+    return current->id;
+}
+
+void win1_on_key_press (Ez_event *ev)                         /* Key pressed */
+{
+    if(ev->key_sym==XK_c)
+    {
+        if(show_wght==0) show_wght=1;
+        else show_wght=0;
+    }
+    if(ev->key_sym==XK_a)
+    {
+        ez_window_get_size(ev->win,&w,&h);
+		create_dot();
+	}
+	else if(ev->key_sym==XK_Delete)
+    {
+        dot *current=first;
+        dot *temp;
+		if(current->next==NULL) return;
+		while(current->selected==1)
+		{
+            if(current->next==NULL) return;
+            while(current->adj!=NULL)
+            {
+                unlink(current->adj, current, current->adj->dot2);
+            }
+            first = current->next;
+            free(current);
+            current=first;
+		}
+        while(current->next!=NULL)
+        {
+            if(current->next->selected==1)
+            {
+                while(current->next->adj!=NULL)
+                {
+                    unlink(current->next->adj, current->next, current->next->adj->dot2);
+                }
+                temp=current->next;
+                current->next=current->next->next;
+                free(temp);
+            }
+            else current=current->next;
+        }
+        printf("Finished.\n");
+	}
+	ez_send_expose(ev->win);
+}
+
+
+void win1_on_configure_notify (Ez_event *ev)          /* Window size changed */
+{
+    ez_send_expose(ev->win);
+}
+
+
+void win1_on_event (Ez_event *ev)                /* Called by ez_main_loop() */
+{                                                /* for each event on win1   */
+    switch (ev->type) {
+        case Expose          : win1_on_expose           (ev); break;
+        case ButtonPress     : win1_on_button_press     (ev); break;
+        case ButtonRelease   : win1_on_button_release   (ev); break;
+        case MotionNotify    : win1_on_motion_notify    (ev); break;
+        case KeyPress        : win1_on_key_press        (ev); break;
+        case ConfigureNotify : win1_on_configure_notify (ev); break;
+   }
+}
+
+
+int main ()
+{
+	mode=0;
+	show_wght=0;
+
+    if (ez_init() < 0) exit(1);
+
+    Ez_window win1 = ez_window_create (800, 600, "Graph test", win1_on_event);
+
+    ez_window_dbuf(win1,1);
+    dots_created=-1;
+	first = malloc(sizeof(dot));
+	dots_created++;
+	first->x=ez_random(800);
+	first->y=ez_random(600);
+	first->adj=NULL;
+	first->next=NULL;
+	first->id=dots_created;
+	first->selected=0;
+
+    ez_main_loop ();
+    exit(0);
+}
+
